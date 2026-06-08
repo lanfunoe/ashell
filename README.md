@@ -10,7 +10,7 @@
 
 ## 下载
 
-您可以从 [GitHub Releases 页面](https://github.com/rust-kotlin/ashell/releases/latest) 下载 macOS 版本的最新预编译程序。
+您可以从 [GitHub Releases 页面](https://github.com/rust-kotlin/ashell/releases/latest) 下载 macOS 和 Windows 版本的最新预编译程序。
 
 ## 功能特性
 
