@@ -1,3 +1,5 @@
+#![windows_subsystem = "windows"]
+
 use std::{
     borrow::Cow,
     cell::{Cell, RefCell},
@@ -13,14 +15,16 @@ use alacritty_terminal::index::Side;
 use alacritty_terminal::selection::SelectionType;
 use anyhow::{Context as _, Result};
 use gpui::{
-    div, point, prelude::FluentBuilder as _, px, size, uniform_list, Anchor, App, AppContext as _,
-    Bounds, ClipboardItem, Context, Entity, FocusHandle, Focusable as _, FontWeight, Hsla,
-    InteractiveElement as _, IntoElement, KeyBinding, KeyDownEvent, MouseButton, MouseDownEvent,
-    MouseMoveEvent, MouseUpEvent, ParentElement as _, PathPromptOptions, Pixels, Point, QuitMode,
-    Render, ScrollDelta, ScrollWheelEvent, SharedString, Size, Styled as _,
-    UniformListScrollHandle, Window, WindowOptions,
+    Anchor, App, AppContext as _, Bounds, ClipboardItem, Context, Entity, FocusHandle,
+    Focusable as _, FontWeight, Hsla, InteractiveElement as _, IntoElement, KeyBinding,
+    KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement as _,
+    PathPromptOptions, Pixels, Point, QuitMode, Render, ScrollDelta, ScrollWheelEvent,
+    SharedString, Size, Styled as _, UniformListScrollHandle, Window, WindowOptions, div, point,
+    prelude::FluentBuilder as _, px, size, uniform_list,
 };
 use gpui_component::{
+    ActiveTheme as _, ElementExt, IconName, Root, Sizable as _, Theme, ThemeMode, ThemeRegistry,
+    WindowExt as _,
     button::{Button, ButtonVariants as _},
     checkbox::Checkbox,
     dialog::Dialog,
@@ -28,11 +32,10 @@ use gpui_component::{
     input::{Input, InputEvent, InputState},
     menu::{ContextMenuExt as _, DropdownMenu as _, PopupMenuItem},
     progress::Progress,
-    resizable::{h_resizable, resizable_panel, v_resizable, ResizableState},
+    resizable::{ResizableState, h_resizable, resizable_panel, v_resizable},
     scroll::{ScrollableElement as _, Scrollbar, ScrollbarHandle, ScrollbarShow},
     tab::{Tab, TabBar},
-    v_flex, ActiveTheme as _, ElementExt, IconName, Root, Sizable as _, Theme, ThemeMode,
-    ThemeRegistry, WindowExt as _,
+    v_flex,
 };
 use gpui_component_assets::Assets;
 use tokio::runtime::Runtime;
@@ -47,9 +50,9 @@ mod terminal;
 mod terminal_element;
 
 use config::{AuthMethod, ConfigStore, Session};
-use sftp::{format_mtime, RemoteEntry, SftpHandle};
-use system::{format_bytes, DiskSample, SystemSampler, SystemSnapshot};
-use terminal::{encode_key, BackendCommand, BackendEvent, TabKind, TerminalTab};
+use sftp::{RemoteEntry, SftpHandle, format_mtime};
+use system::{DiskSample, SystemSampler, SystemSnapshot, format_bytes};
+use terminal::{BackendCommand, BackendEvent, TabKind, TerminalTab, encode_key};
 use terminal_element::TerminalElement;
 
 const DEFAULT_COLS: u16 = 100;
@@ -300,6 +303,21 @@ impl Ashell {
             _subscriptions,
         };
 
+        if follow_system_theme {
+            cx.spawn(async move |this, cx| {
+                loop {
+                    cx.background_executor()
+                        .timer(Duration::from_secs(60))
+                        .await;
+                    if this.update(cx, |_, cx| {
+                        Theme::sync_system_appearance(None, cx);
+                    }).is_err() {
+                        break;
+                    }
+                }
+            }).detach();
+        }
+
         this.apply_theme_preferences(window, cx);
         // this.open_local(cx);
         this.start_event_pump(cx);
@@ -331,19 +349,21 @@ impl Ashell {
     }
 
     fn start_event_pump(&self, cx: &mut Context<Self>) {
-        cx.spawn(async move |this, cx| loop {
-            cx.background_executor()
-                .timer(Duration::from_millis(16))
-                .await;
-            if this
-                .update(cx, |this, cx| {
-                    this.drain_backend_events();
-                    this.sample_system_if_due();
-                    cx.notify();
-                })
-                .is_err()
-            {
-                break;
+        cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(Duration::from_millis(16))
+                    .await;
+                if this
+                    .update(cx, |this, cx| {
+                        this.drain_backend_events();
+                        this.sample_system_if_due();
+                        cx.notify();
+                    })
+                    .is_err()
+                {
+                    break;
+                }
             }
         })
         .detach();
