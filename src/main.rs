@@ -19,7 +19,7 @@ use gpui::{
     KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement as _,
     PathPromptOptions, Pixels, Point, QuitMode, Render, ScrollDelta, ScrollWheelEvent,
     SharedString, Size, Styled as _, UniformListScrollHandle, Window, WindowOptions, div, point,
-    prelude::FluentBuilder as _, px, size, uniform_list,
+    prelude::FluentBuilder as _, px, rems, size, uniform_list,
 };
 use gpui_component::{
     ActiveTheme as _, Disableable, ElementExt, IconName, Root, Sizable as _, Theme, ThemeMode,
@@ -59,7 +59,7 @@ rust_i18n::i18n!("locales", fallback = "en");
 
 const DEFAULT_COLS: u16 = 100;
 const DEFAULT_ROWS: u16 = 30;
-const APP_FONT_FAMILY: &str = "Maple Mono NF CN";
+
 const SIDEBAR_WIDTH: f32 = 306.0;
 const TAB_BAR_HEIGHT: f32 = 52.0;
 const TERMINAL_PADDING_X: f32 = 32.0;
@@ -150,7 +150,10 @@ struct Ashell {
     theme_mode: ThemeMode,
     light_theme_name: SharedString,
     dark_theme_name: SharedString,
+    ui_font_size: f32,
     terminal_font_size: f32,
+    ui_font_family: SharedString,
+    terminal_font_family: SharedString,
     tabs: Vec<TerminalTab>,
     sftp_handles: HashMap<String, SftpHandle>,
     active_tab: Option<String>,
@@ -281,6 +284,8 @@ impl Ashell {
         }
         rust_i18n::set_locale(&active_locale);
         gpui_component::set_locale(&active_locale);
+        let ui_font_family: SharedString = config.ui_font_family().into();
+        let terminal_font_family: SharedString = config.terminal_font_family().into();
         let mut this = Self {
             focus_handle: cx.focus_handle(),
             selector_focus_handle: cx.focus_handle(),
@@ -298,7 +303,10 @@ impl Ashell {
             theme_mode,
             light_theme_name,
             dark_theme_name,
+            ui_font_size: config.ui_font_size(),
             terminal_font_size: config.terminal_font_size(),
+            ui_font_family,
+            terminal_font_family,
             tabs: Vec::new(),
             sftp_handles: HashMap::new(),
             active_tab: None,
@@ -716,6 +724,42 @@ impl Ashell {
         cx.notify();
     }
 
+    fn change_ui_font_size(&mut self, delta: f32, cx: &mut Context<Self>) {
+        self.ui_font_size = (self.ui_font_size + delta).clamp(8.0, 24.0);
+        self.config.set_ui_font_size(self.ui_font_size);
+        if let Err(err) = self.config.save() {
+            tracing::warn!("failed to save UI font size: {err:#}");
+        }
+        Theme::global_mut(cx).font_size = px(self.ui_font_size);
+        self.status = format!("UI font size: {:.0}px", self.ui_font_size).into();
+        cx.notify();
+    }
+
+    fn change_ui_font_family(
+        &mut self,
+        family: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.ui_font_family = family.into();
+        self.config.set_ui_font_family(family);
+        if let Err(err) = self.config.save() {
+            tracing::warn!("failed to save UI font family: {err:#}");
+        }
+        set_theme_font_names(Theme::global_mut(cx), &self.ui_font_family);
+        cx.notify();
+        window.refresh();
+    }
+
+    fn change_terminal_font_family(&mut self, family: &str, cx: &mut Context<Self>) {
+        self.terminal_font_family = family.into();
+        self.config.set_terminal_font_family(family);
+        if let Err(err) = self.config.save() {
+            tracing::warn!("failed to save terminal font family: {err:#}");
+        }
+        cx.notify();
+    }
+
     fn show_ssh_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let view = cx.entity();
         let session_name_input = self.session_name_input.clone();
@@ -898,13 +942,13 @@ impl Ashell {
                                                 .gap_1()
                                                 .child(
                                                     div()
-                                                        .text_size(px(12.))
+                                                        .text_size(rems(1.0))
                                                         .font_weight(FontWeight::SEMIBOLD)
                                                         .child(t!("local_terminal")),
                                                 )
                                                 .child(
                                                     div()
-                                                        .text_size(px(11.))
+                                                        .text_size(rems(0.917))
                                                         .text_color(_cx.theme().muted_foreground)
                                                         .child(t!("open_local_shell_tab")),
                                                 ),
@@ -940,13 +984,13 @@ impl Ashell {
                                                 .gap_1()
                                                 .child(
                                                     div()
-                                                        .text_size(px(12.))
+                                                        .text_size(rems(1.0))
                                                         .font_weight(FontWeight::SEMIBOLD)
                                                         .child(t!("new_ssh_connection")),
                                                 )
                                                 .child(
                                                     div()
-                                                        .text_size(px(11.))
+                                                        .text_size(rems(0.917))
                                                         .text_color(_cx.theme().muted_foreground)
                                                         .child(t!("create_or_edit_ssh_session")),
                                                 ),
@@ -1002,7 +1046,7 @@ impl Ashell {
                                                             .gap_1()
                                                             .child(
                                                                 div()
-                                                                    .text_size(px(12.))
+                                                                    .text_size(rems(1.0))
                                                                     .font_weight(
                                                                         FontWeight::SEMIBOLD,
                                                                     )
@@ -1010,7 +1054,7 @@ impl Ashell {
                                                             )
                                                             .child(
                                                                 div()
-                                                                    .text_size(px(11.))
+                                                                    .text_size(rems(0.917))
                                                                     .text_color(
                                                                         _cx.theme()
                                                                             .muted_foreground,
@@ -1049,22 +1093,223 @@ impl Ashell {
                                         .child(
                                             div()
                                                 .w(px(180.))
+                                                .child(t!("ui_font_size").to_string()),
+                                        )
+                                        .child(
+                                            Button::new("ui-font-size-down")
+                                                .label("-")
+                                                .on_click(window.listener_for(
+                                                    &view,
+                                                    |this, _, _, cx| {
+                                                        this.change_ui_font_size(-1.0, cx)
+                                                    },
+                                                )),
+                                        )
+                                        .child(div().min_w(px(64.)).text_center().child(format!(
+                                            "{:.0}px",
+                                            view.read(cx).ui_font_size
+                                        )))
+                                        .child(
+                                            Button::new("ui-font-size-up")
+                                                .label("+")
+                                                .on_click(window.listener_for(
+                                                    &view,
+                                                    |this, _, _, cx| {
+                                                        this.change_ui_font_size(1.0, cx)
+                                                    },
+                                                )),
+                                        ),
+                                )
+                                .child(
+                                    h_flex()
+                                        .items_center()
+                                        .gap_3()
+                                        .child(
+                                            div()
+                                                .w(px(180.))
                                                 .child(t!("terminal_font_size").to_string()),
                                         )
-                                        .child(Button::new("font-size-down").label("-").on_click(
-                                            window.listener_for(&view, |this, _, _, cx| {
-                                                this.change_terminal_font_size(-1.0, cx)
-                                            }),
-                                        ))
+                                        .child(
+                                            Button::new("font-size-down")
+                                                .label("-")
+                                                .on_click(window.listener_for(
+                                                    &view,
+                                                    |this, _, _, cx| {
+                                                        this.change_terminal_font_size(-1.0, cx)
+                                                    },
+                                                )),
+                                        )
                                         .child(div().min_w(px(64.)).text_center().child(format!(
                                             "{:.0}px",
                                             view.read(cx).terminal_font_size
                                         )))
-                                        .child(Button::new("font-size-up").label("+").on_click(
-                                            window.listener_for(&view, |this, _, _, cx| {
-                                                this.change_terminal_font_size(1.0, cx)
-                                            }),
-                                        )),
+                                        .child(
+                                            Button::new("font-size-up")
+                                                .label("+")
+                                                .on_click(window.listener_for(
+                                                    &view,
+                                                    |this, _, _, cx| {
+                                                        this.change_terminal_font_size(1.0, cx)
+                                                    },
+                                                )),
+                                        ),
+                                )
+                                .child(
+                                    h_flex()
+                                        .items_center()
+                                        .gap_3()
+                                        .child(
+                                            div()
+                                                .w(px(180.))
+                                                .child(t!("ui_font_family").to_string()),
+                                        )
+                                        .child(
+                                            Button::new("ui-font-dropdown")
+                                                .small()
+                                                .icon(IconName::ChevronsUpDown)
+                                                .label({
+                                                    let current = view
+                                                        .read(cx)
+                                                        .ui_font_family
+                                                        .to_string();
+                                                    let names = cx.text_system().all_font_names();
+                                                    if current == *".SystemUIFont"
+                                                        || current.is_empty()
+                                                        || !names.contains(&current)
+                                                    {
+                                                        t!("system_default").to_string()
+                                                    } else {
+                                                        current
+                                                    }
+                                                })
+                                                .dropdown_menu_with_anchor(
+                                                    Anchor::BottomRight,
+                                                    {
+                                                        let view = view.clone();
+                                                        move |mut menu, window, cx| {
+                                                            let current = view
+                                                                .read(cx)
+                                                                .ui_font_family
+                                                                .to_string();
+                                                            let names =
+                                                                cx.text_system().all_font_names();
+                                                            menu = menu.min_w(200.).max_h(
+                                                                px(320.),
+                                                            ).scrollable(true);
+                                                            // "System Default" entry
+                                                            menu = menu.item(
+                                                                PopupMenuItem::new(
+                                                                    t!(
+                                                                        "system_default"
+                                                                    )
+                                                                    .to_string(),
+                                                                )
+                                                                .checked(
+                                                                    current == *".SystemUIFont"
+                                                                        || current
+                                                                            .is_empty(),
+                                                                )
+                                                                .on_click(window
+                                                                    .listener_for(
+                                                                    &view,
+                                                                    move |this, _, window,
+                                                                     cx| {
+                                                                        this.change_ui_font_family(
+                                                                            ".SystemUIFont",
+                                                                            window,
+                                                                            cx,
+                                                                        );
+                                                                    },
+                                                                )),
+                                                            );
+                                                            for name in names {
+                                                                let checked =
+                                                                    name == current;
+                                                                menu = menu.item(
+                                                                    PopupMenuItem::new(
+                                                                        name.clone(),
+                                                                    )
+                                                                    .checked(checked)
+                                                                    .on_click(window
+                                                                        .listener_for(
+                                                                        &view,
+                                                                        move |this, _,
+                                                                         window, cx| {
+                                                                            this
+                                                                                .change_ui_font_family(
+                                                                                &name,
+                                                                                window,
+                                                                                cx,
+                                                                            );
+                                                                        },
+                                                                    )),
+                                                                );
+                                                            }
+                                                            menu
+                                                        }
+                                                    },
+                                                ),
+                                        ),
+                                )
+                                .child(
+                                    h_flex()
+                                        .items_center()
+                                        .gap_3()
+                                        .child(
+                                            div()
+                                                .w(px(180.))
+                                                .child(t!("terminal_font_family").to_string()),
+                                        )
+                                        .child(
+                                            Button::new("terminal-font-dropdown")
+                                                .small()
+                                                .icon(IconName::ChevronsUpDown)
+                                                .label({
+                                                    view.read(cx)
+                                                        .terminal_font_family
+                                                        .to_string()
+                                                })
+                                                .dropdown_menu_with_anchor(
+                                                    Anchor::BottomRight,
+                                                    {
+                                                        let view = view.clone();
+                                                        move |mut menu, window, cx| {
+                                                            let current = view
+                                                                .read(cx)
+                                                                .terminal_font_family
+                                                                .to_string();
+                                                            let names =
+                                                                cx.text_system().all_font_names();
+                                                            menu = menu.min_w(200.).max_h(
+                                                                px(320.),
+                                                            ).scrollable(true);
+                                                            for name in names {
+                                                                let checked =
+                                                                    name == current;
+                                                                menu = menu.item(
+                                                                    PopupMenuItem::new(
+                                                                        name.clone(),
+                                                                    )
+                                                                    .checked(checked)
+                                                                    .on_click(window
+                                                                        .listener_for(
+                                                                        &view,
+                                                                        move |this, _,
+                                                                         _window, cx| {
+                                                                            this
+                                                                                .change_terminal_font_family(
+                                                                                &name,
+                                                                                cx,
+                                                                            );
+                                                                        },
+                                                                    )),
+                                                                );
+                                                            }
+                                                            menu
+                                                        }
+                                                    },
+                                                ),
+                                        ),
                                 )
                                 .child(
                                     h_flex()
@@ -1146,7 +1391,7 @@ impl Ashell {
                                 )
                                 .child(
                                     div()
-                                        .text_size(px(12.))
+                                        .text_size(rems(1.0))
                                         .text_color(cx.theme().muted_foreground)
                                         .child(t!("theme_management_hint")),
                                 ),
@@ -1666,7 +1911,8 @@ impl Ashell {
         let theme = Theme::global_mut(cx);
         theme.light_theme = light_theme;
         theme.dark_theme = dark_theme;
-        set_theme_font_names(theme);
+        theme.font_size = px(self.ui_font_size);
+        set_theme_font_names(theme, &self.ui_font_family);
 
         if self.follow_system_theme {
             Theme::sync_system_appearance(Some(window), cx);
@@ -2034,13 +2280,13 @@ impl Ashell {
             .gap_4()
             .child(
                 div()
-                    .text_size(px(28.))
+                    .text_size(rems(2.333))
                     .font_weight(FontWeight::BOLD)
                     .child("ashell"),
             )
             .child(
                 div()
-                    .text_size(px(13.))
+                    .text_size(rems(1.083))
                     .text_color(cx.theme().muted_foreground)
                     .child(t!("open_local_or_ssh")),
             )
@@ -2181,7 +2427,7 @@ impl Ashell {
                     .gap_2()
                     .child(
                         div()
-                            .text_size(px(11.))
+                            .text_size(rems(0.917))
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(fill)
                             .child(label.clone()),
@@ -2189,7 +2435,7 @@ impl Ashell {
                     .child(div().flex_1())
                     .child(
                         div()
-                            .text_size(px(11.))
+                            .text_size(rems(0.917))
                             .text_color(cx.theme().muted_foreground)
                             .flex_none()
                             .child(format!("{:.0}%", percent * 100.0)),
@@ -2207,7 +2453,7 @@ impl Ashell {
                     .w_full()
                     .min_w(px(0.))
                     .overflow_hidden()
-                    .text_size(px(11.))
+                    .text_size(rems(0.917))
                     .text_color(cx.theme().muted_foreground)
                     .child(detail),
             )
@@ -2227,7 +2473,7 @@ impl Ashell {
                     .gap_2()
                     .child(
                         div()
-                            .text_size(px(12.))
+                            .text_size(rems(1.0))
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(cx.theme().chart_4)
                             .child(t!("net")),
@@ -2235,7 +2481,7 @@ impl Ashell {
                     .child(div().flex_1())
                     .child(
                         div()
-                            .text_size(px(11.))
+                            .text_size(rems(0.917))
                             .text_color(cx.theme().muted_foreground)
                             .child(t!("live")),
                     ),
@@ -2251,11 +2497,11 @@ impl Ashell {
                             .child(
                                 div()
                                     .flex_none()
-                                    .text_size(px(12.))
+                                    .text_size(rems(1.0))
                                     .text_color(cx.theme().chart_4)
                                     .child("↓"),
                             )
-                            .child(div().text_size(px(12.)).child(self.system.net_rx.clone())),
+                            .child(div().text_size(rems(1.0)).child(self.system.net_rx.clone())),
                     )
                     .child(
                         h_flex()
@@ -2265,11 +2511,11 @@ impl Ashell {
                             .child(
                                 div()
                                     .flex_none()
-                                    .text_size(px(12.))
+                                    .text_size(rems(1.0))
                                     .text_color(cx.theme().chart_5)
                                     .child("↑"),
                             )
-                            .child(div().text_size(px(12.)).child(self.system.net_tx.clone())),
+                            .child(div().text_size(rems(1.0)).child(self.system.net_tx.clone())),
                     ),
             )
     }
@@ -2295,14 +2541,14 @@ impl Ashell {
                             .flex_1()
                             .min_w(px(0.))
                             .overflow_hidden()
-                            .text_size(px(11.))
+                            .text_size(rems(0.917))
                             .text_color(cx.theme().foreground)
                             .child(mount.clone()),
                     )
                     .child(
                         div()
                             .flex_none()
-                            .text_size(px(11.))
+                            .text_size(rems(0.917))
                             .text_color(cx.theme().muted_foreground)
                             .child(format!("{:.0}%", percent * 100.0)),
                     ),
@@ -2318,7 +2564,7 @@ impl Ashell {
                 div()
                     .min_w(px(0.))
                     .overflow_hidden()
-                    .text_size(px(11.))
+                    .text_size(rems(0.917))
                     .text_color(cx.theme().muted_foreground)
                     .child(format!(
                         "{}/{}",
@@ -2514,14 +2760,14 @@ impl Ashell {
                 .bg(cx.theme().muted)
                 .child(
                     div()
-                        .text_size(px(12.))
+                        .text_size(rems(1.0))
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(cx.theme().primary)
                         .child(t!("remote_files")),
                 )
                 .child(
                     div()
-                        .text_size(px(12.))
+                        .text_size(rems(1.0))
                         .text_color(cx.theme().muted_foreground)
                         .child(t!("open_ssh_tab_sftp")),
                 );
@@ -2572,7 +2818,7 @@ impl Ashell {
                     .bg(cx.theme().tab_bar)
                     .child(
                         div()
-                            .text_size(px(12.))
+                            .text_size(rems(1.0))
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(cx.theme().primary)
                             .child(t!("remote_files")),
@@ -2687,7 +2933,7 @@ impl Ashell {
                             .child(
                                 div()
                                     .flex_1()
-                                    .text_size(px(11.))
+                                    .text_size(rems(0.917))
                                     .text_color(cx.theme().muted_foreground)
                                     .child(t!("name")),
                             ),
@@ -2696,7 +2942,7 @@ impl Ashell {
                         div()
                             .w(size_col_width)
                             .flex_none()
-                            .text_size(px(11.))
+                            .text_size(rems(0.917))
                             .text_color(cx.theme().muted_foreground)
                             .child(t!("size")),
                     )
@@ -2704,7 +2950,7 @@ impl Ashell {
                         div()
                             .w(modified_col_width)
                             .flex_none()
-                            .text_size(px(11.))
+                            .text_size(rems(0.917))
                             .text_color(cx.theme().muted_foreground)
                             .child(t!("modified")),
                     )
@@ -2828,7 +3074,7 @@ impl Ashell {
                                                         div()
                                                             .w(icon_col_width)
                                                             .flex_none()
-                                                            .text_size(px(12.))
+                                                            .text_size(rems(1.0))
                                                             .text_color(name_color)
                                                             .child(if entry.is_dir {
                                                                 "📁"
@@ -2841,7 +3087,7 @@ impl Ashell {
                                                             .flex_1()
                                                             .min_w(px(0.))
                                                             .overflow_hidden()
-                                                            .text_size(px(12.))
+                                                            .text_size(rems(1.0))
                                                             .text_color(name_color)
                                                             .child(entry.name),
                                                     ),
@@ -2850,7 +3096,7 @@ impl Ashell {
                                                 div()
                                                     .w(size_col_width)
                                                     .flex_none()
-                                                    .text_size(px(11.))
+                                                    .text_size(rems(0.917))
                                                     .text_color(cx.theme().muted_foreground)
                                                     .child(if entry.is_dir {
                                                         "-".to_string()
@@ -2862,7 +3108,7 @@ impl Ashell {
                                                 div()
                                                     .w(modified_col_width)
                                                     .flex_none()
-                                                    .text_size(px(11.))
+                                                    .text_size(rems(0.917))
                                                     .text_color(cx.theme().muted_foreground)
                                                     .child(format_mtime(entry.modified)),
                                             )
@@ -2900,7 +3146,7 @@ impl Ashell {
                         div()
                             .min_w(px(0.))
                             .overflow_hidden()
-                            .text_size(px(11.))
+                            .text_size(rems(0.917))
                             .text_color(cx.theme().muted_foreground)
                             .child(status),
                     ),
@@ -2939,13 +3185,13 @@ impl Ashell {
                             .child(
                                 div()
                                     .font_weight(FontWeight::BOLD)
-                                    .text_size(px(20.))
+                                    .text_size(rems(1.667))
                                     .text_color(cx.theme().primary)
                                     .child("ashell"),
                             )
                             .child(
                                 div()
-                                    .text_size(px(11.))
+                                    .text_size(rems(0.917))
                                     .text_color(cx.theme().muted_foreground)
                                     .child({
                                         if let Some(kind) = self.active_kind() {
@@ -2969,7 +3215,7 @@ impl Ashell {
                             .items_center()
                             .child(
                                 div()
-                                    .text_size(px(12.))
+                                    .text_size(rems(1.0))
                                     .font_weight(FontWeight::SEMIBOLD)
                                     .text_color(cx.theme().primary)
                                     .child(t!("system")),
@@ -2977,7 +3223,7 @@ impl Ashell {
                             .child(div().flex_1())
                             .child(
                                 div()
-                                    .text_size(px(11.))
+                                    .text_size(rems(0.917))
                                     .text_color(cx.theme().muted_foreground)
                                     .child(self.system_target_label()),
                             ),
@@ -2985,7 +3231,7 @@ impl Ashell {
                     .when_some(self.system_status.clone(), |this, text| {
                         this.child(
                             div()
-                                .text_size(px(11.))
+                                .text_size(rems(0.917))
                                 .text_color(cx.theme().muted_foreground)
                                 .child(text),
                         )
@@ -3022,7 +3268,7 @@ impl Ashell {
                             .bg(cx.theme().muted)
                             .child(
                                 div()
-                                    .text_size(px(11.))
+                                    .text_size(rems(0.917))
                                     .text_color(cx.theme().chart_5)
                                     .child(t!("disk")),
                             )
@@ -3048,7 +3294,7 @@ impl Ashell {
                     .gap_2()
                     .child(
                         div()
-                            .text_size(px(12.))
+                            .text_size(rems(1.0))
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(cx.theme().primary)
                             .child(t!("saved")),
@@ -3127,13 +3373,13 @@ impl Ashell {
                                             .gap_1()
                                             .child(
                                                 div()
-                                                    .text_size(px(12.))
+                                                    .text_size(rems(1.0))
                                                     .font_weight(FontWeight::SEMIBOLD)
                                                     .child(name),
                                             )
                                             .child(
                                                 div()
-                                                    .text_size(px(11.))
+                                                    .text_size(rems(0.917))
                                                     .text_color(cx.theme().muted_foreground)
                                                     .child(detail),
                                             ),
@@ -3188,7 +3434,7 @@ impl Render for Ashell {
             .size_full()
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)
-            .font_family(APP_FONT_FAMILY)
+            .font_family(self.ui_font_family.clone())
             .child(
                 h_resizable("ashell-workspace")
                     .with_state(&self.workspace_panels)
@@ -3298,8 +3544,8 @@ impl Render for Ashell {
                                             .p_4()
                                             .bg(cx.theme().background)
                                             .text_color(cx.theme().foreground)
-                                            .font_family(APP_FONT_FAMILY)
-                                            .text_size(px(13.))
+                                            .font_family(self.ui_font_family.clone())
+                                            .text_size(rems(1.083))
                                             .line_height(px(18.))
                                             .overflow_hidden()
                                             .track_focus(&self.focus_handle)
@@ -3334,7 +3580,7 @@ impl Render for Ashell {
                                                                     self.focus_handle.clone(),
                                                                     snapshot,
                                                                     self.terminal_marked_text.clone(),
-                                                                    APP_FONT_FAMILY,
+                                                                    self.terminal_font_family.clone(),
                                                                     px(self.terminal_font_size),
                                                                     px(self.terminal_line_height()),
                                                                     px(self.terminal_cell_width()),
@@ -3455,7 +3701,7 @@ impl Render for Ashell {
                                                         .gap_2()
                                                         .children(progress.lines.iter().cloned().map(|line| {
                                                             div()
-                                                                .text_size(px(12.))
+                                                                .text_size(rems(1.0))
                                                                 .text_color(if progress.failed {
                                                                     cx.theme().danger
                                                                 } else {
@@ -3500,7 +3746,9 @@ fn load_fonts(cx: &mut App) -> Result<()> {
     cx.text_system()
         .add_fonts(vec![regular, bold])
         .context("load Maple Mono NF CN fonts")?;
-    set_theme_font_names(cx.global_mut::<Theme>());
+    // At startup we don't have a config yet, so pass the default UI font family.
+    // It will be reapplied in Ashell::new() -> apply_theme_preferences.
+    set_theme_font_names(cx.global_mut::<Theme>(), ".SystemUIFont");
     Ok(())
 }
 
@@ -3513,9 +3761,9 @@ fn load_embedded_themes(cx: &mut App) {
     }
 }
 
-fn set_theme_font_names(theme: &mut Theme) {
-    theme.font_family = APP_FONT_FAMILY.into();
-    theme.mono_font_family = APP_FONT_FAMILY.into();
+fn set_theme_font_names(theme: &mut Theme, ui_font_family: &str) {
+    theme.font_family = ui_font_family.into();
+    theme.mono_font_family = ui_font_family.into();
 }
 
 #[cfg(target_os = "macos")]
