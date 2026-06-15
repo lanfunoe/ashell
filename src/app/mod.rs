@@ -238,6 +238,7 @@ pub(crate) struct Ashell {
     pub(crate) system_status: Option<SharedString>,
     pub(crate) pane_root: PaneLayout,
     pub(crate) focused_pane_path: Vec<usize>,
+    pub(crate) terminal_panel_bounds: Option<Bounds<Pixels>>,
     pub(crate) terminal_bounds: HashMap<String, Bounds<Pixels>>,
     pub(crate) terminal_selecting: bool,
     pub(crate) dragging_splitter: Option<(Vec<usize>, usize)>, // (parent_path, child_index)
@@ -425,6 +426,7 @@ impl Ashell {
             active_group: None,
             pane_root: PaneLayout::Single(String::new()),
             focused_pane_path: Vec::new(),
+            terminal_panel_bounds: None,
             selector_selection: 0,
             workspace_panels,
             body_panels,

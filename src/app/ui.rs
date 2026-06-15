@@ -1692,10 +1692,16 @@ impl Ashell {
     fn render_terminal_panel(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let has_active = self.active_tab.is_some();
         let pane_tree = self.pane_root.clone();
+        let view = cx.entity();
 
         v_flex().size_full().child(
             div()
                 .size_full()
+                .on_prepaint(move |bounds, _window, cx| {
+                    let _ = view.update(cx, |this, _| {
+                        this.terminal_panel_bounds = Some(bounds);
+                    });
+                })
                 .overflow_hidden()
                 .track_focus(&self.focus_handle)
                 .key_context(TERMINAL_KEY_CONTEXT)

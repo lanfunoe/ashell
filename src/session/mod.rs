@@ -875,16 +875,11 @@ impl Ashell {
             .first()
             .map(|size| size.as_f32())
             .unwrap_or(SIDEBAR_WIDTH);
-        let terminal_bounds = self
-            .active_tab
-            .as_ref()
-            .and_then(|tab_id| self.terminal_bounds.get(tab_id));
 
-        // Prefer the measured terminal element bounds when we already have
-        // them. That keeps the PTY sized to the real visible content area,
-        // instead of relying on a conservative viewport heuristic that can
-        // leave several rows unused at the bottom.
-        let (width, height) = if let Some(bounds) = terminal_bounds {
+        // Use the whole terminal panel bounds for PTY sizing.
+        // Individual pane bounds are smaller when split, so using them here
+        // would shrink the root PTY dimensions a second time.
+        let (width, height) = if let Some(bounds) = self.terminal_panel_bounds {
             (bounds.size.width.as_f32(), bounds.size.height.as_f32())
         } else {
             let terminal_height = self
