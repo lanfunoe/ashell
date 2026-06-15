@@ -8,15 +8,15 @@
 
 This project focuses on providing a high-performance and visually appealing shell workspace by combining local and remote environments with a rich set of built-in features. 
 
-## 🚀 v0.3 Massive Update!
+## 🚀 v0.4 Major Upgrades
 
-The brand-new v0.3 introduces comprehensive upgrades to both architecture and user experience:
-- ✨ **Global Real-Time Font Settings** (Thanks to [@ancion](https://github.com/ancion) for [PR #6](https://github.com/rust-kotlin/ashell/pull/6)): Customize your global UI fonts and terminal rendering fonts independently. Adjust text size in real-time with automatic persistence.
-- ✨ **Concurrent SFTP Transfers**: A dedicated Transfers dialog now supports highly optimized, concurrent file uploads and downloads with precise progress display.
-- ✨ **Persistent Workspace State**: Your sidebar width adjustments, terminal themes, font settings, and file visibility preferences are completely restored upon your next launch!
-- ✨ **Intelligent SSH Disconnect/Reconnect**: Greatly enhanced SSH connection resilience. Provides a beautiful and localized overlay for one-click re-connection on unexpected disconnections.
-- ✨ **Hot-Swappable i18n System**: Deeply optimized internationalization. Switch instantly between English and Simplified Chinese without restarting the application.
-- ✨ **Smart Right-Click Actions**: Added intelligent right-click copy and paste for the terminal, featuring a dedicated settings toggle and OS-native keyboard shortcut hints.
+v0.4 builds on the v0.3 foundation and focuses on more capable workspace operations and a smoother daily workflow:
+- ✨ **Keybinding Management**: View and edit common shortcuts from the settings UI with conflict hints.
+- ✨ **Settings Page Polish**: A more compact and clearer settings experience with improved layout and interaction flow.
+- ✨ **Multi-Pane Tabs with a tmux-like Workflow**: A single tab can now host multiple panes, with split, focus, and switching actions for a tmux-inspired experience.
+- ✨ **Transfer History Improvements**: The transfer history panel now presents richer task details, making upload and download activity easier to review.
+- ✨ **SSH Passphrase Support**: Private keys can now store a passphrase, and SSH connections will use it automatically.
+- ✨ **Terminal Rendering Enhancements**: Terminal rendering now handles Block Elements and similar custom glyphs more completely.
 
 ## Download
 
@@ -43,6 +43,7 @@ The current version provides a fully-featured GPUI-native workspace:
 - **System Telemetry:** Real-time visualization of CPU, memory, swap, network, and disk metrics in the left cockpit sidebar.
 - **Theming System:** Switch between multiple GPUI Component themes directly from the top toolbar.
 - **Embedded Fonts:** Uses embedded Maple Mono NF CN fonts out-of-the-box for excellent CJK character and Nerd Font icon support.
+- **v0.3 Core Enhancements:** Global font and font-size controls, concurrent SFTP transfers, persistent layout state, disconnect awareness, hot-swappable i18n, and smart terminal right-click copy/paste.
 
 ## Run
 
