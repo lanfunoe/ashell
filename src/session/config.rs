@@ -27,6 +27,8 @@ pub struct Session {
     #[serde(default)]
     pub private_key_inline: String,
     #[serde(default)]
+    pub passphrase: String,
+    #[serde(default)]
     pub last_used: Option<String>,
 }
 
@@ -43,6 +45,7 @@ impl Session {
             password,
             private_key_path: String::new(),
             private_key_inline: String::new(),
+            passphrase: String::new(),
             last_used: None,
         }
     }
@@ -53,6 +56,7 @@ impl Session {
         user: String,
         private_key_path: String,
         private_key_inline: String,
+        passphrase: String,
     ) -> Self {
         let name = format!("{user}@{host}");
         Self {
@@ -65,6 +69,7 @@ impl Session {
             password: String::new(),
             private_key_path,
             private_key_inline,
+            passphrase,
             last_used: None,
         }
     }
@@ -95,7 +100,7 @@ pub enum SavedWindowBounds {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ConfigFile {
-    #[serde(default)]
+    #[serde(default = "default_follow_system_theme")]
     pub follow_system_theme: bool,
     #[serde(default)]
     pub theme_mode: String,
@@ -135,6 +140,10 @@ pub struct ConfigFile {
 
 fn default_monitoring_position() -> String {
     "Sidebar".to_string()
+}
+
+fn default_follow_system_theme() -> bool {
+    true
 }
 
 fn default_locale() -> String {
@@ -188,7 +197,26 @@ impl ConfigStore {
         let cache = if path.exists() {
             let raw = fs::read_to_string(&path)
                 .with_context(|| format!("failed to read {}", path.display()))?;
-            serde_json::from_str::<ConfigFile>(&raw).unwrap_or_default()
+            match serde_json::from_str::<ConfigFile>(&raw) {
+                Ok(cache) => cache,
+                Err(err) => {
+                    let backup_path = path.with_extension("json.bak");
+                    if let Err(backup_err) = fs::write(&backup_path, raw.as_bytes()) {
+                        tracing::warn!(
+                            "failed to parse config {}; backup to {} also failed: {backup_err:#}; parse error: {err:#}",
+                            path.display(),
+                            backup_path.display(),
+                        );
+                    } else {
+                        tracing::warn!(
+                            "failed to parse config {}; backed up the original to {} and loaded defaults: {err:#}",
+                            path.display(),
+                            backup_path.display(),
+                        );
+                    }
+                    ConfigFile::default()
+                }
+            }
         } else {
             ConfigFile::default()
         };

@@ -381,16 +381,18 @@ async fn run_sftp(
                             let err_msg = format!("{err:#}");
                             let is_cancelled = err_msg.contains("transfer cancelled");
                             let state = if is_cancelled {
-                                crate::terminal::TransferState::Interrupted("User cancelled".to_string())
+                                crate::terminal::TransferState::Interrupted(
+                                    "User cancelled".to_string(),
+                                )
                             } else {
                                 crate::terminal::TransferState::Failed(err_msg.clone())
                             };
                             let _ = events_clone.send(BackendEvent::SftpStatus {
                                 tab_id: tab_id_clone.clone(),
-                                text: if is_cancelled { 
+                                text: if is_cancelled {
                                     "Transmission cancelled".to_string()
-                                } else { 
-                                    t!("download_failed", err = err_msg.clone()).to_string() 
+                                } else {
+                                    t!("download_failed", err = err_msg.clone()).to_string()
                                 },
                             });
                             let _ = events_clone.send(BackendEvent::TransferProgress {
@@ -492,16 +494,18 @@ async fn run_sftp(
                             let err_msg = format!("{err:#}");
                             let is_cancelled = err_msg.contains("transfer cancelled");
                             let state = if is_cancelled {
-                                crate::terminal::TransferState::Interrupted("User cancelled".to_string())
+                                crate::terminal::TransferState::Interrupted(
+                                    "User cancelled".to_string(),
+                                )
                             } else {
                                 crate::terminal::TransferState::Failed(err_msg.clone())
                             };
                             let _ = events_clone.send(BackendEvent::SftpStatus {
                                 tab_id: tab_id_clone.clone(),
-                                text: if is_cancelled { 
+                                text: if is_cancelled {
                                     "Transmission cancelled".to_string()
-                                } else { 
-                                    t!("upload_failed", err = err_msg.clone()).to_string() 
+                                } else {
+                                    t!("upload_failed", err = err_msg.clone()).to_string()
                                 },
                             });
                             let _ = events_clone.send(BackendEvent::TransferProgress {
@@ -888,6 +892,8 @@ async fn connect_and_authenticate(
 fn load_session_private_key(session: &Session) -> Result<PrivateKey> {
     let inline_key = normalize_inline_private_key(&session.private_key_inline);
     let key_path = expand_key_path(session.private_key_path.trim());
+    let passphrase = session.passphrase.trim();
+    let passphrase = (!passphrase.is_empty()).then_some(passphrase);
     let has_inline = !inline_key.is_empty();
     let has_path = key_path.is_some();
 
@@ -898,14 +904,14 @@ fn load_session_private_key(session: &Session) -> Result<PrivateKey> {
     let mut errors = Vec::new();
 
     if has_inline {
-        match decode_secret_key(&inline_key, None) {
+        match decode_secret_key(&inline_key, passphrase) {
             Ok(key) => return Ok(key),
             Err(err) => errors.push(format!("decode private key content: {err}")),
         }
     }
 
     if let Some(path) = key_path {
-        match load_secret_key(path.as_path(), None) {
+        match load_secret_key(path.as_path(), passphrase) {
             Ok(key) => return Ok(key),
             Err(err) => errors.push(format!("load key {}: {err}", path.display())),
         }
@@ -1594,14 +1600,14 @@ async fn exec_remote_command(
     let mut stderr = Vec::new();
     let mut stdout = Vec::new();
     let mut exit_status = None;
-    
+
     // Add timeout to prevent indefinite blocking (300 seconds = 5 minutes)
     let timeout = tokio::time::Duration::from_secs(300);
     let result = tokio::time::timeout(timeout, async {
         loop {
             // Yield to allow cancellation
             tokio::task::yield_now().await;
-            
+
             if let Some(msg) = channel.wait().await {
                 match msg {
                     russh::ChannelMsg::Data { data } => stdout.extend_from_slice(&data),
@@ -1781,8 +1787,6 @@ async fn extract_archive_to(path: &Path, target_dir: &Path) -> Result<()> {
 
     Ok(())
 }
-
-
 
 #[derive(Clone)]
 struct SftpClientHandler;

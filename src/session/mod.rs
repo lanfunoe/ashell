@@ -71,6 +71,7 @@ impl Ashell {
         let password = self.password_input.read(cx).value().to_string();
         let key_path = self.key_path_input.read(cx).value().trim().to_string();
         let key_inline = self.key_inline_input.read(cx).value().to_string();
+        let passphrase = self.passphrase_input.read(cx).value().to_string();
 
         if host.is_empty() || user.is_empty() {
             self.status = t!("host_and_user_required").into();
@@ -97,7 +98,7 @@ impl Ashell {
                     cx.notify();
                     return;
                 }
-                Session::key(host, port, user, key_path, key_inline)
+                Session::key(host, port, user, key_path, key_inline, passphrase)
             }
         };
         session.name = name;
@@ -134,6 +135,7 @@ impl Ashell {
         Self::set_input_value(&self.password_input, "", window, cx);
         Self::set_input_value(&self.key_path_input, "", window, cx);
         Self::set_input_value(&self.key_inline_input, "", window, cx);
+        Self::set_input_value(&self.passphrase_input, "", window, cx);
     }
 
     pub(crate) fn load_session_into_form(
@@ -158,6 +160,12 @@ impl Ashell {
         Self::set_input_value(
             &self.key_inline_input,
             session.private_key_inline.clone(),
+            window,
+            cx,
+        );
+        Self::set_input_value(
+            &self.passphrase_input,
+            session.passphrase.clone(),
             window,
             cx,
         );
@@ -867,16 +875,31 @@ impl Ashell {
             .first()
             .map(|size| size.as_f32())
             .unwrap_or(SIDEBAR_WIDTH);
-        let terminal_height = self
-            .body_panels
-            .read(cx)
-            .sizes()
-            .first()
-            .map(|size| size.as_f32())
-            .unwrap_or(viewport.height.as_f32() - TAB_BAR_HEIGHT - 248.0);
-        let width = (viewport.width.as_f32() - sidebar_width - TERMINAL_PADDING_X - 8.0)
-            .max(self.terminal_cell_width());
-        let height = (terminal_height - TERMINAL_PADDING_Y).max(self.terminal_line_height());
+        let terminal_bounds = self
+            .active_tab
+            .as_ref()
+            .and_then(|tab_id| self.terminal_bounds.get(tab_id));
+
+        // Prefer the measured terminal element bounds when we already have
+        // them. That keeps the PTY sized to the real visible content area,
+        // instead of relying on a conservative viewport heuristic that can
+        // leave several rows unused at the bottom.
+        let (width, height) = if let Some(bounds) = terminal_bounds {
+            (bounds.size.width.as_f32(), bounds.size.height.as_f32())
+        } else {
+            let terminal_height = self
+                .body_panels
+                .read(cx)
+                .sizes()
+                .first()
+                .map(|size| size.as_f32())
+                .unwrap_or(viewport.height.as_f32() - TAB_BAR_HEIGHT - 248.0);
+            (
+                (viewport.width.as_f32() - sidebar_width - TERMINAL_PADDING_X - 8.0)
+                    .max(self.terminal_cell_width()),
+                (terminal_height - TERMINAL_PADDING_Y).max(self.terminal_line_height()),
+            )
+        };
         let total_cols = (width / self.terminal_cell_width()).floor().max(1.0) as u16;
         let total_rows = (height / self.terminal_line_height()).floor().max(1.0) as u16;
 

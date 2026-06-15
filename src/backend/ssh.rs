@@ -352,6 +352,8 @@ async fn connect_and_authenticate(
 fn load_session_private_key(session: &Session) -> Result<PrivateKey> {
     let inline_key = normalize_inline_private_key(&session.private_key_inline);
     let key_path = expand_key_path(session.private_key_path.trim());
+    let passphrase = session.passphrase.trim();
+    let passphrase = (!passphrase.is_empty()).then_some(passphrase);
     let has_inline = !inline_key.is_empty();
     let has_path = key_path.is_some();
 
@@ -362,14 +364,14 @@ fn load_session_private_key(session: &Session) -> Result<PrivateKey> {
     let mut errors = Vec::new();
 
     if has_inline {
-        match decode_secret_key(&inline_key, None) {
+        match decode_secret_key(&inline_key, passphrase) {
             Ok(key) => return Ok(key),
             Err(err) => errors.push(format!("decode private key content: {err}")),
         }
     }
 
     if let Some(path) = key_path {
-        match load_secret_key(path.as_path(), None) {
+        match load_secret_key(path.as_path(), passphrase) {
             Ok(key) => return Ok(key),
             Err(err) => errors.push(format!("load key {}: {err}", path.display())),
         }

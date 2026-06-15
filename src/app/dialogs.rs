@@ -30,6 +30,7 @@ impl Ashell {
         let password_input = self.password_input.clone();
         let key_path_input = self.key_path_input.clone();
         let key_inline_input = self.key_inline_input.clone();
+        let passphrase_input = self.passphrase_input.clone();
 
         window.open_dialog(cx, move |dialog: Dialog, _window, _cx| {
             dialog
@@ -45,6 +46,7 @@ impl Ashell {
                     let password_input = password_input.clone();
                     let key_path_input = key_path_input.clone();
                     let key_inline_input = key_inline_input.clone();
+                    let passphrase_input = passphrase_input.clone();
                     move |content, window, cx| {
                         let is_password = view.read(cx).ssh_auth_method == AuthMethod::Password;
                         let is_editing = view.read(cx).editing_session_id.is_some();
@@ -114,7 +116,7 @@ impl Ashell {
                                                         ),
                                                     )
                                                     .child(
-                                                        Input::new(&key_path_input).tab_index(5),
+                                                        Input::new(&key_path_input).tab_index(4),
                                                     ),
                                             )
                                             .child(
@@ -134,7 +136,8 @@ impl Ashell {
                                                     )),
                                             ),
                                     )
-                                    .child(Input::new(&key_inline_input).h(px(128.)).tab_index(6))
+                                    .child(Input::new(&key_inline_input).h(px(128.)).tab_index(5))
+                                    .child(Input::new(&passphrase_input).mask_toggle().tab_index(6))
                                 })
                                 .child(
                                     h_flex()

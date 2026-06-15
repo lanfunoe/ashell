@@ -199,6 +199,7 @@ pub(crate) struct Ashell {
     pub(crate) password_input: Entity<InputState>,
     pub(crate) key_path_input: Entity<InputState>,
     pub(crate) key_inline_input: Entity<InputState>,
+    pub(crate) passphrase_input: Entity<InputState>,
     pub(crate) sftp_path_input: Entity<InputState>,
     pub(crate) ssh_auth_method: AuthMethod,
     pub(crate) editing_session_id: Option<String>,
@@ -331,6 +332,11 @@ impl Ashell {
                 .rows(5)
                 .placeholder("-----BEGIN OPENSSH PRIVATE KEY-----")
         });
+        let passphrase_input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder("SSH private key passphrase (optional)")
+                .masked(true)
+        });
         let sftp_path_input = cx.new(|cx| InputState::new(window, cx).default_value("/"));
         let sftp_new_folder_input =
             cx.new(|cx| InputState::new(window, cx).placeholder(t!("new_folder").to_string()));
@@ -343,6 +349,7 @@ impl Ashell {
             cx.subscribe_in(&password_input, window, Self::on_input_event),
             cx.subscribe_in(&key_path_input, window, Self::on_input_event),
             cx.subscribe_in(&key_inline_input, window, Self::on_input_event),
+            cx.subscribe_in(&passphrase_input, window, Self::on_input_event),
             cx.subscribe_in(&sftp_path_input, window, Self::on_input_event),
             cx.subscribe_in(&sftp_new_folder_input, window, Self::on_input_event),
         ];
@@ -358,12 +365,7 @@ impl Ashell {
             tracing::warn!("failed to load config: {err:#}");
             ConfigStore::in_memory()
         });
-        let follow_system_theme =
-            if config.light_theme_name().is_empty() && config.dark_theme_name().is_empty() {
-                true
-            } else {
-                config.follow_system_theme()
-            };
+        let follow_system_theme = config.follow_system_theme();
 
         let theme_mode = match config.theme_mode() {
             "light" => ThemeMode::Light,
@@ -405,6 +407,7 @@ impl Ashell {
             password_input,
             key_path_input,
             key_inline_input,
+            passphrase_input,
             sftp_path_input,
             ssh_auth_method: AuthMethod::Password,
             editing_session_id: None,
@@ -443,8 +446,13 @@ impl Ashell {
             transfers: {
                 let mut transfers = config.transfers();
                 for t in transfers.iter_mut() {
-                    if matches!(t.state, crate::terminal::TransferState::Running | crate::terminal::TransferState::Paused) {
-                        t.state = crate::terminal::TransferState::Zombie(t!("zombie_reason").to_string());
+                    if matches!(
+                        t.state,
+                        crate::terminal::TransferState::Running
+                            | crate::terminal::TransferState::Paused
+                    ) {
+                        t.state =
+                            crate::terminal::TransferState::Zombie(t!("zombie_reason").to_string());
                     }
                 }
                 transfers
@@ -868,6 +876,4 @@ impl Ashell {
         self.config.set_transfers(self.transfers.clone());
         cx.notify();
     }
-
-
 }
