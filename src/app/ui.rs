@@ -1,7 +1,7 @@
 use gpui::{
     Context, ElementId, Focusable as _, FontWeight, Hsla, InteractiveElement as _, IntoElement,
     MouseButton, MouseDownEvent, ParentElement as _, PathBuilder, Pixels, Render,
-    StatefulInteractiveElement as _, Styled as _, Window, WindowControlArea, canvas, div, hsla,
+    StatefulInteractiveElement as _, Styled as _, Window, canvas, div, hsla,
     point, prelude::FluentBuilder as _, px, rems, uniform_list,
 };
 use gpui_component::{
@@ -1971,6 +1971,9 @@ impl Ashell {
                 (g.id.clone(), g.title.clone(), pane_ids)
             })
             .collect();
+        let is_integrated =
+            self.active_title_bar_style == crate::session::config::TitleBarStyle::Integrated;
+
         h_flex()
             .flex_1()
             .min_w(px(0.))
@@ -1982,6 +1985,9 @@ impl Ashell {
                     .flex_1()
                     .min_w(px(0.))
                     .h_full()
+                    .when(is_integrated, |this| {
+                        this.window_control_area(gpui::WindowControlArea::Drag)
+                    })
                     .overflow_x_hidden()
                     .child({
                         TabBar::new("ashell-tab-bar")
@@ -2577,7 +2583,6 @@ impl Render for Ashell {
                                 .flex_1()
                                 .min_w(px(0.))
                                 .h_full()
-                                .window_control_area(WindowControlArea::Drag)
                                 .child(self.render_tab_bar(cx)),
                         ),
                 )
