@@ -1594,7 +1594,7 @@ impl Ashell {
                                                                     .into_any_element()
                                                             }
                                                         })
-                                                    ).description(t!("copy_paste_hint", key = if cfg!(target_os = "macos") { "Command" } else { "Ctrl" }).to_string())
+                                                    ).description(t!("copy_paste_hint").to_string())
                                                 )
                                                 .item(
                                                     SettingItem::new(

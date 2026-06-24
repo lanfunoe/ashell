@@ -190,7 +190,7 @@ impl Ashell {
             .and_then(|tab| tab.selection_text())
     }
 
-    fn paste_into_terminal(&mut self, text: &str, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn paste_into_terminal(&mut self, text: &str, window: &mut Window, cx: &mut Context<Self>) {
         let Some(active_id) = self.active_tab.clone() else {
             return;
         };
