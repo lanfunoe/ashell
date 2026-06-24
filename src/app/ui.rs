@@ -2,7 +2,7 @@ use gpui::{
     Context, ElementId, Focusable as _, FontWeight, Hsla, InteractiveElement as _, IntoElement,
     MouseButton, MouseDownEvent, ParentElement as _, PathBuilder, Pixels, Render,
     StatefulInteractiveElement as _, Styled as _, Window, canvas, div, hsla, point,
-    prelude::FluentBuilder as _, px, rems, uniform_list,
+    prelude::FluentBuilder as _, px, relative, rems, uniform_list,
 };
 use gpui_component::{
     ActiveTheme, Disableable as _, ElementExt, Icon, IconName, InteractiveElementExt as _, Root,
@@ -1984,44 +1984,78 @@ impl Ashell {
     ) -> impl IntoElement {
         let is_macos = cfg!(target_os = "macos");
         let is_fullscreen = window.is_fullscreen();
+        
+        let is_active = cx.active_window().map_or(true, |active| active == window.window_handle());
 
         h_flex()
+            .group("window-controls")
             .flex_none()
             .items_center()
             .px_3()
             .gap_2()
             .when(!is_macos || is_fullscreen, |this| {
                 this.child(
-                    div()
+                    h_flex()
                         .id("window-close")
                         .size(px(12.))
                         .rounded_full()
-                        .bg(hsla(0.0, 0.8, 0.4, 1.0)) // Red
+                        .bg(if is_active { hsla(3.0 / 360.0, 1.0, 0.67, 1.0) } else { hsla(0.0, 0.0, 0.8, 1.0) }) // Red or Inactive Grey
+                        .group_hover("window-controls", |s| s.bg(hsla(3.0 / 360.0, 1.0, 0.67, 1.0)))
                         .when(!is_macos, |this| this.window_control_area(gpui::WindowControlArea::Close))
                         .on_click(cx.listener(|this, _, window, cx| {
                             this.save_layout_state(window, cx);
                             window.remove_window();
                         }))
-                        .hover(|s| s.bg(hsla(0.0, 0.8, 0.5, 1.0)))
-                        .active(|s| s.bg(hsla(0.0, 0.8, 0.3, 1.0))),
+                        .hover(|s| s.bg(hsla(3.0 / 360.0, 1.0, 0.55, 1.0)))
+                        .active(|s| s.bg(hsla(3.0 / 360.0, 1.0, 0.45, 1.0)))
+                        .items_center()
+                        .justify_center()
+                        .child(
+                            h_flex()
+                                .items_center()
+                                .justify_center()
+                                .text_size(px(7.))
+                                .font_weight(FontWeight::BOLD)
+                                .line_height(relative(1.0))
+                                .text_color(hsla(3.0 / 360.0, 1.0, 0.15, 0.7))
+                                .opacity(0.0)
+                                .group_hover("window-controls", |s| s.opacity(1.0))
+                                .child("✕")
+                        ),
                 )
                 .child(
-                    div()
+                    h_flex()
                         .id("window-minimize")
                         .size(px(12.))
                         .rounded_full()
-                        .bg(hsla(0.12, 0.8, 0.4, 1.0)) // Yellow
+                        .bg(if is_active { hsla(39.0 / 360.0, 1.0, 0.59, 1.0) } else { hsla(0.0, 0.0, 0.8, 1.0) }) // Yellow or Inactive Grey
+                        .group_hover("window-controls", |s| s.bg(hsla(39.0 / 360.0, 1.0, 0.59, 1.0)))
                         .when(!is_macos, |this| this.window_control_area(gpui::WindowControlArea::Min))
                         .on_click(|_, window, _| window.minimize_window())
-                        .hover(|s| s.bg(hsla(0.12, 0.8, 0.5, 1.0)))
-                        .active(|s| s.bg(hsla(0.12, 0.8, 0.3, 1.0))),
+                        .hover(|s| s.bg(hsla(39.0 / 360.0, 1.0, 0.49, 1.0)))
+                        .active(|s| s.bg(hsla(39.0 / 360.0, 1.0, 0.39, 1.0)))
+                        .items_center()
+                        .justify_center()
+                        .child(
+                            h_flex()
+                                .items_center()
+                                .justify_center()
+                                .text_size(px(7.))
+                                .font_weight(FontWeight::BOLD)
+                                .line_height(relative(1.0))
+                                .text_color(hsla(39.0 / 360.0, 1.0, 0.15, 0.8))
+                                .opacity(0.0)
+                                .group_hover("window-controls", |s| s.opacity(1.0))
+                                .child("−")
+                        ),
                 )
                 .child(
-                    div()
+                    h_flex()
                         .id("window-maximize")
                         .size(px(12.))
                         .rounded_full()
-                        .bg(hsla(0.33, 0.8, 0.4, 1.0)) // Green
+                        .bg(if is_active { hsla(127.0 / 360.0, 0.68, 0.47, 1.0) } else { hsla(0.0, 0.0, 0.8, 1.0) }) // Green or Inactive Grey
+                        .group_hover("window-controls", |s| s.bg(hsla(127.0 / 360.0, 0.68, 0.47, 1.0)))
                         .when(!is_macos, |this| this.window_control_area(gpui::WindowControlArea::Max))
                         .on_click(|_, window, _| {
                             if window.is_fullscreen() {
@@ -2033,8 +2067,22 @@ impl Ashell {
                                 window.zoom_window();
                             }
                         })
-                        .hover(|s| s.bg(hsla(0.33, 0.8, 0.5, 1.0)))
-                        .active(|s| s.bg(hsla(0.33, 0.8, 0.3, 1.0))),
+                        .hover(|s| s.bg(hsla(127.0 / 360.0, 0.68, 0.37, 1.0)))
+                        .active(|s| s.bg(hsla(127.0 / 360.0, 0.68, 0.27, 1.0)))
+                        .items_center()
+                        .justify_center()
+                        .child(
+                            h_flex()
+                                .items_center()
+                                .justify_center()
+                                .text_size(px(7.))
+                                .font_weight(FontWeight::BOLD)
+                                .line_height(relative(1.0))
+                                .text_color(hsla(127.0 / 360.0, 1.0, 0.15, 0.8))
+                                .opacity(0.0)
+                                .group_hover("window-controls", |s| s.opacity(1.0))
+                                .child("+")
+                        ),
                 )
             })
             .when(is_macos, |this| {
