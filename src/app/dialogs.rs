@@ -2084,6 +2084,7 @@ impl Ashell {
             let title = match prompt_type {
                 crate::terminal::PromptType::KeyboardInteractive => "Keyboard Interactive Authentication",
                 crate::terminal::PromptType::Passphrase => "Enter Private Key Passphrase",
+                crate::terminal::PromptType::Password => "Enter SSH Password",
             };
 
             let tab_id_for_ok = tab_id_clone.clone();

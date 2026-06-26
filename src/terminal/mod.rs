@@ -29,6 +29,7 @@ pub enum TabKind {
 pub enum PromptType {
     KeyboardInteractive,
     Passphrase,
+    Password,
 }
 
 #[derive(Debug, Clone)]

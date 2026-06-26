@@ -284,6 +284,44 @@ async fn connect_and_authenticate(
 
     let authed = match session.auth {
         AuthMethod::Password => {
+            let password = if session.password.is_empty() {
+                tracing::info!(
+                    "[ssh] password is empty, prompting user for {}@{}",
+                    session.user,
+                    addr
+                );
+                let prompt_lock = PROMPT_LOCK.get_or_init(|| Mutex::new(()));
+                let _guard = prompt_lock.lock().await;
+                let _ = events.send(BackendEvent::PromptRequest {
+                    tab_id: tab_id.to_string(),
+                    prompt_type: PromptType::Password,
+                    instruction: format!(
+                        "Enter SSH password for {}@{}:{}",
+                        session.user, session.host, session.port
+                    ),
+                    prompts: vec![PromptInfo {
+                        prompt: "Password".to_string(),
+                        echo: false,
+                    }],
+                });
+                let mut password = None;
+                while let Some(cmd) = commands.recv().await {
+                    match cmd {
+                        BackendCommand::PromptResponse(responses) => {
+                            password = responses.first().cloned();
+                            break;
+                        }
+                        BackendCommand::Close => {
+                            return Err(anyhow!("Authentication cancelled by user"));
+                        }
+                        _ => {}
+                    }
+                }
+                password.ok_or_else(|| anyhow!("Password prompt cancelled"))?
+            } else {
+                session.password.clone()
+            };
+
             tracing::info!(
                 "[ssh] sending password authentication for {}@{}",
                 session.user,
@@ -297,7 +335,7 @@ async fn connect_and_authenticate(
                 ),
             });
             handle
-                .authenticate_password(&session.user, &session.password)
+                .authenticate_password(&session.user, &password)
                 .await
                 .context("password authentication failed")?
         }
