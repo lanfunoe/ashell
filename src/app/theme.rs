@@ -13,15 +13,18 @@ pub(crate) const EMBEDDED_THEME_JSONS: &[&str] = &[
 ];
 
 pub(crate) fn load_fonts(cx: &mut App) -> Result<()> {
-    let regular = std::borrow::Cow::Borrowed(
-        include_bytes!("../../assets/fonts/MapleMono-NF-CN-Regular.ttf").as_slice(),
-    );
-    let bold = std::borrow::Cow::Borrowed(
-        include_bytes!("../../assets/fonts/MapleMono-NF-CN-Bold.ttf").as_slice(),
-    );
-    cx.text_system()
-        .add_fonts(vec![regular, bold])
-        .context("load Maple Mono NF CN fonts")?;
+    let has_system_maple = cx.text_system().all_font_names().contains(&"Maple Mono NF CN".to_string());
+    if !has_system_maple {
+        let regular = std::borrow::Cow::Borrowed(
+            include_bytes!("../../assets/fonts/MapleMono-NF-CN-Regular.ttf").as_slice(),
+        );
+        let bold = std::borrow::Cow::Borrowed(
+            include_bytes!("../../assets/fonts/MapleMono-NF-CN-Bold.ttf").as_slice(),
+        );
+        cx.text_system()
+            .add_fonts(vec![regular, bold])
+            .context("load Maple Mono NF CN fonts")?;
+    }
     set_theme_font_names(cx.global_mut::<Theme>(), ".SystemUIFont");
     Ok(())
 }
