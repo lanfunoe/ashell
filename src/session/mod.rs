@@ -198,7 +198,11 @@ impl Ashell {
             window,
             cx,
         );
-        self.ssh_proxy_type = session.proxy_type.clone();
+        self.ssh_proxy_type = if session.proxy_type.is_empty() {
+            "none".to_string()
+        } else {
+            session.proxy_type.clone()
+        };
         Self::set_input_value(&self.proxy_host_input, session.proxy_host.clone(), window, cx);
         Self::set_input_value(
             &self.proxy_port_input,

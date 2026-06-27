@@ -30,7 +30,7 @@ pub struct Session {
     pub passphrase: String,
     #[serde(default)]
     pub last_used: Option<String>,
-    #[serde(default)]
+    #[serde(default = "default_global_proxy_type")]
     pub proxy_type: String, // "none", "socks5", "http"
     #[serde(default)]
     pub proxy_host: String,
