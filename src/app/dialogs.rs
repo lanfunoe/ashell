@@ -1466,9 +1466,10 @@ impl Ashell {
                                                                     .label({
                                                                         let current = view.read(cx).ui_font_family.to_string();
                                                                         let names = cx.text_system().all_font_names();
+                                                                        let using_system_maple = crate::app::theme::USING_SYSTEM_MAPLE.load(std::sync::atomic::Ordering::Relaxed);
                                                                         if current == *".SystemUIFont" || current.is_empty() || !names.contains(&current) {
                                                                             t!("system_default").to_string()
-                                                                        } else if current == "Maple Mono NF CN" {
+                                                                        } else if !using_system_maple && current == "Maple Mono NF CN" {
                                                                             format!("Maple Mono NF CN ({})", t!("software_builtin"))
                                                                         } else {
                                                                             current
@@ -1488,7 +1489,8 @@ impl Ashell {
                                                                                     }))
                                                                             );
                                                                             let maple_font = "Maple Mono NF CN".to_string();
-                                                                            if names.contains(&maple_font) {
+                                                                            let using_system_maple = crate::app::theme::USING_SYSTEM_MAPLE.load(std::sync::atomic::Ordering::Relaxed);
+                                                                            if !using_system_maple && names.contains(&maple_font) {
                                                                                 names.retain(|n| n != &maple_font);
                                                                                 menu = menu.item(
                                                                                     PopupMenuItem::new(format!("{} ({})", maple_font, t!("software_builtin")))
@@ -1527,7 +1529,8 @@ impl Ashell {
                                                                     .icon(IconName::ChevronsUpDown)
                                                                     .label({
                                                                         let current = view.read(cx).terminal_font_family.to_string();
-                                                                        if current == "Maple Mono NF CN" {
+                                                                        let using_system_maple = crate::app::theme::USING_SYSTEM_MAPLE.load(std::sync::atomic::Ordering::Relaxed);
+                                                                        if !using_system_maple && current == "Maple Mono NF CN" {
                                                                             format!("Maple Mono NF CN ({})", t!("software_builtin"))
                                                                         } else {
                                                                             current
@@ -1540,7 +1543,8 @@ impl Ashell {
                                                                             let mut names = cx.text_system().all_font_names();
                                                                             menu = menu.min_w(200.).max_h(px(320.)).scrollable(true);
                                                                             let maple_font = "Maple Mono NF CN".to_string();
-                                                                            if names.contains(&maple_font) {
+                                                                            let using_system_maple = crate::app::theme::USING_SYSTEM_MAPLE.load(std::sync::atomic::Ordering::Relaxed);
+                                                                            if !using_system_maple && names.contains(&maple_font) {
                                                                                 names.retain(|n| n != &maple_font);
                                                                                 menu = menu.item(
                                                                                     PopupMenuItem::new(format!("{} ({})", maple_font, t!("software_builtin")))

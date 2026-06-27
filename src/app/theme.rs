@@ -12,9 +12,15 @@ pub(crate) const EMBEDDED_THEME_JSONS: &[&str] = &[
     include_str!("../../assets/themes/phygerr.json"),
 ];
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
+pub(crate) static USING_SYSTEM_MAPLE: AtomicBool = AtomicBool::new(false);
+
 pub(crate) fn load_fonts(cx: &mut App) -> Result<()> {
     let has_system_maple = cx.text_system().all_font_names().contains(&"Maple Mono NF CN".to_string());
-    if !has_system_maple {
+    if has_system_maple {
+        USING_SYSTEM_MAPLE.store(true, Ordering::Relaxed);
+    } else {
         let regular = std::borrow::Cow::Borrowed(
             include_bytes!("../../assets/fonts/MapleMono-NF-CN-Regular.ttf").as_slice(),
         );
