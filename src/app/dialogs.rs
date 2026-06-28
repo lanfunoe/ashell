@@ -74,6 +74,12 @@ impl Ashell {
                         let is_editing = view.read(cx).editing_session_id.is_some();
                         let proxy_type = view.read(cx).ssh_proxy_type.clone();
                         let show_proxy_fields = proxy_type != "none";
+                        let jump_session_id = view.read(cx).ssh_jump_session_id.clone();
+                        let jump_label = jump_session_id
+                            .as_deref()
+                            .and_then(|id| view.read(cx).config.get(id))
+                            .map(|session| session.name.clone())
+                            .unwrap_or_else(|| t!("jump_none").to_string());
                         content.child(
                             v_flex()
                                 .gap_3()
@@ -163,6 +169,55 @@ impl Ashell {
                                     .child(Input::new(&key_inline_input).h(px(128.)).tab_index(5))
                                     .child(Input::new(&passphrase_input).mask_toggle().tab_index(6))
                                 })
+                                .child(
+                                    v_flex()
+                                        .gap_1()
+                                        .child(div().text_sm().font_weight(FontWeight::BOLD).child(t!("jump_host").to_string()))
+                                        .child(
+                                            Button::new("jump-session-dropdown")
+                                                .label(jump_label)
+                                                .w_full()
+                                                .dropdown_menu_with_anchor(Anchor::BottomLeft, {
+                                                    let view = view.clone();
+                                                    move |mut menu, window, cx| {
+                                                        let selected = view.read(cx).ssh_jump_session_id.clone();
+                                                        let editing = view.read(cx).editing_session_id.clone();
+                                                        let sessions = view.read(cx).config.sessions().to_vec();
+                                                        menu = menu.min_w(260.).item(
+                                                            PopupMenuItem::new(t!("jump_none").to_string())
+                                                                .checked(selected.is_none())
+                                                                .on_click(window.listener_for(&view, |this, _, _, cx| {
+                                                                    this.set_ssh_jump_session_id(None, cx);
+                                                                })),
+                                                        );
+
+                                                        for session in sessions
+                                                            .into_iter()
+                                                            .filter(|session| editing.as_deref() != Some(session.id.as_str()))
+                                                        {
+                                                            let session_id = session.id.clone();
+                                                            let checked = selected.as_deref() == Some(session.id.as_str());
+                                                            let label = format!(
+                                                                "{} ({}@{}:{})",
+                                                                session.name,
+                                                                session.user,
+                                                                session.host,
+                                                                session.port
+                                                            );
+                                                            menu = menu.item(
+                                                                PopupMenuItem::new(label)
+                                                                    .checked(checked)
+                                                                    .on_click(window.listener_for(&view, move |this, _, _, cx| {
+                                                                        this.set_ssh_jump_session_id(Some(session_id.clone()), cx);
+                                                                    })),
+                                                            );
+                                                        }
+
+                                                        menu
+                                                    }
+                                                }),
+                                        ),
+                                )
                                 .child(
                                     div().text_sm().font_weight(FontWeight::BOLD).child(t!("proxy").to_string())
                                 )
@@ -1963,11 +2018,11 @@ impl Ashell {
                                                                         let port = port_str.trim().parse::<u16>().ok();
                                                                         let user = this.global_proxy_user_input.read(cx).value().trim().to_string();
                                                                         let password = this.global_proxy_password_input.read(cx).value().to_string();
-                                                                        
+
                                                                         if host.is_empty() || port.is_none() {
                                                                             return;
                                                                         }
-                                                                        
+
                                                                         this.config.set_global_proxy_type(this.global_proxy_type.clone());
                                                                         this.config.set_global_proxy_host(host);
                                                                         this.config.set_global_proxy_port(port);

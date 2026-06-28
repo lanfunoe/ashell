@@ -1,8 +1,22 @@
-use std::{fs, path::PathBuf};
+use std::{
+    collections::HashSet,
+    fs, io,
+    path::{Path, PathBuf},
+    pin::Pin,
+    sync::{Arc, OnceLock},
+    task::{Context as TaskContext, Poll},
+};
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
+use async_trait::async_trait;
 use directories::BaseDirs;
+use russh::{
+    Disconnect,
+    client::{self, Handler},
+    keys::{HashAlg, PrivateKey, decode_secret_key, key::PrivateKeyWithHashAlg, load_secret_key},
+};
 use serde::{Deserialize, Serialize};
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -40,6 +54,8 @@ pub struct Session {
     pub proxy_user: String,
     #[serde(default)]
     pub proxy_password: String,
+    #[serde(default)]
+    pub jump_session_id: Option<String>,
 }
 
 impl Session {
@@ -62,6 +78,7 @@ impl Session {
             proxy_port: None,
             proxy_user: String::new(),
             proxy_password: String::new(),
+            jump_session_id: None,
         }
     }
 
@@ -91,6 +108,7 @@ impl Session {
             proxy_port: None,
             proxy_user: String::new(),
             proxy_password: String::new(),
+            jump_session_id: None,
         }
     }
 }
@@ -755,10 +773,56 @@ impl ConfigStore {
     }
 }
 
-pub trait ProxyStream: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + Sync + 'static {}
-impl<T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + Sync + 'static> ProxyStream for T {}
+pub trait ProxyStream: AsyncRead + AsyncWrite + Unpin + Send + 'static {}
+impl<T: AsyncRead + AsyncWrite + Unpin + Send + 'static> ProxyStream for T {}
 
-use std::sync::OnceLock;
+struct JumpStream {
+    inner: Box<dyn ProxyStream>,
+    _jump_handles: Vec<russh::client::Handle<JumpClientHandler>>,
+}
+
+impl AsyncRead for JumpStream {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut TaskContext<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        Pin::new(self.inner.as_mut()).poll_read(cx, buf)
+    }
+}
+
+impl AsyncWrite for JumpStream {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut TaskContext<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        Pin::new(self.inner.as_mut()).poll_write(cx, buf)
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut TaskContext<'_>) -> Poll<io::Result<()>> {
+        Pin::new(self.inner.as_mut()).poll_flush(cx)
+    }
+
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut TaskContext<'_>) -> Poll<io::Result<()>> {
+        Pin::new(self.inner.as_mut()).poll_shutdown(cx)
+    }
+}
+
+#[derive(Clone)]
+struct JumpClientHandler;
+
+#[async_trait]
+impl Handler for JumpClientHandler {
+    type Error = anyhow::Error;
+
+    async fn check_server_key(
+        &mut self,
+        _server_public_key: &russh::keys::ssh_key::PublicKey,
+    ) -> Result<bool, Self::Error> {
+        Ok(true)
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct EnvProxy {
@@ -772,10 +836,51 @@ pub struct EnvProxy {
 pub static ENV_PROXY: OnceLock<Option<EnvProxy>> = OnceLock::new();
 
 pub async fn connect_proxy(session: &Session) -> Result<Box<dyn ProxyStream>> {
+    let config = ConfigStore::load().unwrap_or_else(|_| ConfigStore::in_memory());
+    let jump_chain = jump_chain_for_session(session, &config)?;
+    if jump_chain.is_empty() {
+        return connect_network_stream(session, &config).await;
+    }
+
+    let mut handles = Vec::new();
+    let mut outer_to_inner = jump_chain.into_iter().rev();
+    let first_jump = outer_to_inner
+        .next()
+        .ok_or_else(|| anyhow!("jump chain is empty"))?;
+    let first_stream = connect_network_stream(&first_jump, &config).await?;
+    handles.push(connect_jump_session(&first_jump, first_stream).await?);
+
+    for jump in outer_to_inner {
+        let channel = handles
+            .last()
+            .ok_or_else(|| anyhow!("jump session chain is not connected"))?
+            .channel_open_direct_tcpip(jump.host.clone(), jump.port as u32, "127.0.0.1", 0)
+            .await
+            .with_context(|| format!("open jump channel to {}:{}", jump.host, jump.port))?;
+        let stream: Box<dyn ProxyStream> = Box::new(channel.into_stream());
+        handles.push(connect_jump_session(&jump, stream).await?);
+    }
+
+    let channel = handles
+        .last()
+        .ok_or_else(|| anyhow!("jump session chain is not connected"))?
+        .channel_open_direct_tcpip(session.host.clone(), session.port as u32, "127.0.0.1", 0)
+        .await
+        .with_context(|| format!("open jump channel to {}:{}", session.host, session.port))?;
+    let stream: Box<dyn ProxyStream> = Box::new(channel.into_stream());
+    Ok(Box::new(JumpStream {
+        inner: stream,
+        _jump_handles: handles,
+    }))
+}
+
+async fn connect_network_stream(
+    session: &Session,
+    config: &ConfigStore,
+) -> Result<Box<dyn ProxyStream>> {
     let target_host = &session.host;
     let target_port = session.port;
 
-    let config = ConfigStore::load().unwrap_or_else(|_| ConfigStore::in_memory());
     let (proxy_type, proxy_host, proxy_port, proxy_user, proxy_password) = {
         if !session.proxy_type.is_empty() && session.proxy_type != "none" {
             (
@@ -806,7 +911,7 @@ pub async fn connect_proxy(session: &Session) -> Result<Box<dyn ProxyStream>> {
             ("none".to_string(), String::new(), None, String::new(), String::new())
         }
     };
-    
+
     if proxy_type != "none" && (proxy_host.is_empty() || proxy_port.is_none()) {
         let addr = format!("{}:{}", target_host, target_port);
         let stream = tokio::net::TcpStream::connect(&addr).await?;
@@ -878,6 +983,178 @@ pub async fn connect_proxy(session: &Session) -> Result<Box<dyn ProxyStream>> {
     }
 }
 
+async fn connect_jump_session(
+    session: &Session,
+    stream: Box<dyn ProxyStream>,
+) -> Result<russh::client::Handle<JumpClientHandler>> {
+    let config = Arc::new(client::Config {
+        inactivity_timeout: Some(std::time::Duration::from_secs(600)),
+        keepalive_interval: Some(std::time::Duration::from_secs(3)),
+        keepalive_max: 2,
+        ..Default::default()
+    });
+    let addr = format!("{}:{}", session.host, session.port);
+    let mut handle = client::connect_stream(config, stream, JumpClientHandler)
+        .await
+        .with_context(|| format!("connect jump {addr} failed"))?;
+
+    let authed = match session.auth {
+        AuthMethod::Password => handle
+            .authenticate_password(&session.user, &session.password)
+            .await
+            .with_context(|| format!("jump password authentication failed for {}", session.name))?,
+        AuthMethod::Key => {
+            let keypair = load_session_private_key(session)?;
+            let keys = private_keys_with_algs(keypair).context("invalid jump private key")?;
+            let mut success = false;
+            for key in keys {
+                match handle.authenticate_publickey(&session.user, key).await {
+                    Ok(true) => {
+                        success = true;
+                        break;
+                    }
+                    Ok(false) => continue,
+                    Err(err) => {
+                        tracing::debug!(
+                            "[ssh] jump public key auth error for {}: {:?}",
+                            session.name,
+                            err
+                        );
+                        continue;
+                    }
+                }
+            }
+            success
+        }
+    };
+
+    if !authed {
+        let _ = handle
+            .disconnect(Disconnect::ByApplication, "jump auth failed", "")
+            .await;
+        return Err(anyhow!(
+            "jump authentication failed for {}@{}:{}",
+            session.user,
+            session.host,
+            session.port
+        ));
+    }
+
+    Ok(handle)
+}
+
+fn jump_chain_for_session(session: &Session, config: &ConfigStore) -> Result<Vec<Session>> {
+    let mut chain = Vec::new();
+    let mut seen = HashSet::new();
+    seen.insert(session.id.clone());
+    let mut next_id = normalized_jump_session_id(session).map(ToOwned::to_owned);
+
+    while let Some(id) = next_id {
+        if !seen.insert(id.clone()) {
+            return Err(anyhow!("SSH jump chain contains a cycle at session {id}"));
+        }
+        let jump = config
+            .get(&id)
+            .cloned()
+            .ok_or_else(|| anyhow!("SSH jump session {id} was not found"))?;
+        next_id = normalized_jump_session_id(&jump).map(ToOwned::to_owned);
+        chain.push(jump);
+    }
+
+    Ok(chain)
+}
+
+fn normalized_jump_session_id(session: &Session) -> Option<&str> {
+    session
+        .jump_session_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+}
+
+fn load_session_private_key(session: &Session) -> Result<PrivateKey> {
+    let inline_key = normalize_inline_private_key(&session.private_key_inline);
+    let key_path = expand_key_path(session.private_key_path.trim());
+    let passphrase = session.passphrase.trim();
+    let passphrase = (!passphrase.is_empty()).then_some(passphrase);
+    let has_inline = !inline_key.is_empty();
+    let has_path = key_path.is_some();
+
+    if !has_inline && !has_path {
+        return Err(anyhow!("private key content or path is required"));
+    }
+
+    let mut errors = Vec::new();
+
+    if has_inline {
+        match decode_secret_key(&inline_key, passphrase) {
+            Ok(key) => return Ok(key),
+            Err(err) => errors.push(format!("decode private key content: {err}")),
+        }
+    }
+
+    if let Some(path) = key_path {
+        match load_secret_key(path.as_path(), passphrase) {
+            Ok(key) => return Ok(key),
+            Err(err) => errors.push(format!("load key {}: {err}", path.display())),
+        }
+    }
+
+    Err(anyhow!(errors.join("; ")))
+}
+
+fn private_keys_with_algs(keypair: PrivateKey) -> Result<Vec<PrivateKeyWithHashAlg>> {
+    let mut algs = Vec::new();
+    let key_arc = Arc::new(keypair);
+
+    if key_arc.algorithm().is_rsa() {
+        if let Ok(k) = PrivateKeyWithHashAlg::new(key_arc.clone(), Some(HashAlg::Sha512)) {
+            algs.push(k);
+        }
+        if let Ok(k) = PrivateKeyWithHashAlg::new(key_arc.clone(), Some(HashAlg::Sha256)) {
+            algs.push(k);
+        }
+        if let Ok(k) = PrivateKeyWithHashAlg::new(key_arc.clone(), None) {
+            algs.push(k);
+        }
+    } else if let Ok(k) = PrivateKeyWithHashAlg::new(key_arc.clone(), None) {
+        algs.push(k);
+    }
+
+    if algs.is_empty() {
+        return Err(anyhow!(
+            "Failed to construct PrivateKeyWithHashAlg for any supported hash algorithm"
+        ));
+    }
+
+    Ok(algs)
+}
+
+fn normalize_inline_private_key(value: &str) -> String {
+    let mut normalized = value
+        .trim()
+        .replace("\\r\\n", "\n")
+        .replace("\\n", "\n")
+        .replace("\r\n", "\n");
+    if !normalized.ends_with('\n') {
+        normalized.push('\n');
+    }
+    normalized
+}
+
+fn expand_key_path(value: &str) -> Option<PathBuf> {
+    if value.is_empty() {
+        return None;
+    }
+    if value == "~" {
+        return BaseDirs::new().map(|dirs| dirs.home_dir().to_path_buf());
+    }
+    if let Some(rest) = value.strip_prefix("~/") {
+        return BaseDirs::new().map(|dirs| dirs.home_dir().join(rest));
+    }
+    Some(Path::new(value).to_path_buf())
+}
+
 pub fn active_proxy(session: &Session) -> Option<(String, String, Option<u16>)> {
     let config = ConfigStore::load().unwrap_or_else(|_| ConfigStore::in_memory());
     let (proxy_type, proxy_host, proxy_port, _, _) = {
@@ -910,10 +1187,26 @@ pub fn active_proxy(session: &Session) -> Option<(String, String, Option<u16>)> 
             ("none".to_string(), String::new(), None, String::new(), String::new())
         }
     };
-    
+
     if proxy_type != "none" && !proxy_host.is_empty() && proxy_port.is_some() {
         Some((proxy_type, proxy_host, proxy_port))
     } else {
         None
     }
+}
+
+pub fn active_jump_chain(session: &Session) -> Option<String> {
+    let config = ConfigStore::load().unwrap_or_else(|_| ConfigStore::in_memory());
+    let chain = jump_chain_for_session(session, &config).ok()?;
+    if chain.is_empty() {
+        return None;
+    }
+    Some(
+        chain
+            .into_iter()
+            .rev()
+            .map(|session| session.name)
+            .collect::<Vec<_>>()
+            .join(" -> "),
+    )
 }

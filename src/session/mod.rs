@@ -1,5 +1,7 @@
 pub mod config;
 
+use std::collections::HashSet;
+
 use gpui::{
     App, AppContext as _, Context, Entity, KeyDownEvent, MouseButton, MouseDownEvent,
     MouseMoveEvent, SharedString, Window, px,
@@ -100,6 +102,44 @@ impl Ashell {
             .as_deref()
             .and_then(|id| self.config.get(id))
             .and_then(|session| session.last_used.clone());
+        let jump_session_id = self
+            .ssh_jump_session_id
+            .clone()
+            .filter(|id| !id.trim().is_empty());
+        if let Some(jump_id) = jump_session_id.as_deref() {
+            if existing_id.as_deref() == Some(jump_id) {
+                self.status = t!("jump_session_cannot_self").into();
+                cx.notify();
+                return;
+            }
+
+            let mut seen = HashSet::new();
+            if let Some(id) = existing_id.as_deref() {
+                seen.insert(id.to_string());
+            }
+            let mut next_id = Some(jump_id.to_string());
+
+            while let Some(id) = next_id {
+                if !seen.insert(id.clone()) {
+                    self.status = t!("jump_session_cycle").into();
+                    cx.notify();
+                    return;
+                }
+
+                let Some(jump) = self.config.get(&id) else {
+                    self.status = t!("jump_session_not_found").into();
+                    cx.notify();
+                    return;
+                };
+
+                next_id = jump
+                    .jump_session_id
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|id| !id.is_empty())
+                    .map(ToOwned::to_owned);
+            }
+        }
 
         let mut session = match self.ssh_auth_method {
             AuthMethod::Password => Session::password(host, port, user, password),
@@ -128,6 +168,7 @@ impl Ashell {
             .ok();
         session.proxy_user = self.proxy_user_input.read(cx).value().trim().to_string();
         session.proxy_password = self.proxy_password_input.read(cx).value().to_string();
+        session.jump_session_id = jump_session_id;
         self.config.upsert(session.clone());
         if let Err(err) = self.config.save() {
             tracing::warn!("failed to save config: {err:#}");
@@ -160,6 +201,7 @@ impl Ashell {
         Self::set_input_value(&self.key_path_input, "", window, cx);
         Self::set_input_value(&self.key_inline_input, "", window, cx);
         Self::set_input_value(&self.passphrase_input, "", window, cx);
+        self.ssh_jump_session_id = None;
         self.ssh_proxy_type = "none".to_string();
         Self::set_input_value(&self.proxy_host_input, "", window, cx);
         Self::set_input_value(&self.proxy_port_input, "", window, cx);
@@ -198,6 +240,7 @@ impl Ashell {
             window,
             cx,
         );
+        self.ssh_jump_session_id = session.jump_session_id.clone();
         self.ssh_proxy_type = if session.proxy_type.is_empty() {
             "none".to_string()
         } else {
@@ -368,6 +411,15 @@ impl Ashell {
 
     pub(crate) fn set_ssh_proxy_type(&mut self, proxy_type: String, cx: &mut Context<Self>) {
         self.ssh_proxy_type = proxy_type;
+        cx.notify();
+    }
+
+    pub(crate) fn set_ssh_jump_session_id(
+        &mut self,
+        jump_session_id: Option<String>,
+        cx: &mut Context<Self>,
+    ) {
+        self.ssh_jump_session_id = jump_session_id;
         cx.notify();
     }
 
@@ -956,7 +1008,21 @@ impl Ashell {
     }
 
     pub(crate) fn session_detail(&self, session: &Session) -> String {
-        format!("{}@{}:{}", session.user, session.host, session.port)
+        let mut detail = format!("{}@{}:{}", session.user, session.host, session.port);
+        if let Some(jump_id) = session
+            .jump_session_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+        {
+            detail.push_str(" | ");
+            if let Some(jump) = self.config.get(jump_id) {
+                detail.push_str(&t!("via_jump", name = jump.name.clone()).to_string());
+            } else {
+                detail.push_str(&t!("via_jump_missing").to_string());
+            }
+        }
+        detail
     }
 
     pub(crate) fn sync_terminal_size(&mut self, window: &Window, cx: &App) {

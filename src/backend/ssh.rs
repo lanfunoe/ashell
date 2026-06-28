@@ -230,7 +230,9 @@ async fn connect_and_authenticate(
         addr,
         session.user
     );
-    let status_text = if let Some((ptype, phost, pport)) = crate::session::config::active_proxy(session) {
+    let status_text = if let Some(chain) = crate::session::config::active_jump_chain(session) {
+        format!("connecting to {addr} via SSH jump {chain}")
+    } else if let Some((ptype, phost, pport)) = crate::session::config::active_proxy(session) {
         let pport_val = pport.unwrap_or_else(|| if ptype == "http" { 8080 } else { 1080 });
         format!("connecting to {addr} via {} proxy {}:{}", ptype.to_uppercase(), phost, pport_val)
     } else {
